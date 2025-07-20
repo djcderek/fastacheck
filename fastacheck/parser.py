@@ -1,9 +1,10 @@
-import tracemalloc
 import re
 from pathlib import Path
+import gzip
+import bz2
 
 class FastaParser:
-    def __init__(self, file_path: str, streaming:bool = False):
+    def __init__(self, file_path: str, streaming: bool = False):
         self.file_path = Path(file_path)
         self.streaming = streaming
 
@@ -18,7 +19,14 @@ class FastaParser:
         }
 
     def _open_file(self):
-        return open(self.file_path, "r")
+        """Open file handle based on compression type."""
+        # Fixed: use self.file_path instead of self.filepath
+        if self.file_path.suffix == '.gz':
+            return gzip.open(self.file_path, 'rt', encoding='utf-8')
+        elif self.file_path.suffix == '.bz2':
+            return bz2.open(self.file_path, 'rt', encoding='utf-8')
+        else:
+            return open(self.file_path, 'r', encoding='utf-8')
     
     def _is_valid_header(self, line: str):
         """Check if a line is a valid FASTA header."""
@@ -26,7 +34,6 @@ class FastaParser:
     
     def _is_valid_sequence_char(self, char: str) -> bool:
         """Check if a character is valid in a biological sequence."""
-
         valid_chars = set('ACGTUWSMKRYBDHVNX*-')
         return char.upper() in valid_chars
     
@@ -163,15 +170,12 @@ class FastaParser:
                 current_sequence = []
                 
                 for line_num, line in enumerate(file, 1):
-                    self.line_number = line_num
                     line = line.rstrip('\n\r')
                     
-                    # Skip empty lines
                     if not line.strip():
                         continue
                     
                     if line.startswith('>'):
-                        # New header - yield previous sequence if exists
                         if current_header is not None:
                             sequence = ''.join(current_sequence)
                             self.stats['total_sequences'] += 1
@@ -187,15 +191,17 @@ class FastaParser:
                         if current_header is None:
                             error_msg = f"Line {line_num}: Sequence data without header"
                             self.stats['parsing_errors'].append(error_msg)
-                            raise error_msg
+                            # Fixed: raise proper exception instead of string
+                            raise ValueError(error_msg)
                         
                         # Validate and add sequence
                         is_valid, error_msg = self._validate_sequence(line)
                         if not is_valid:
                             error_msg = f"Line {line_num}: {error_msg}"
                             self.stats['parsing_errors'].append(error_msg)
-                            if not self.streaming:  # In streaming mode, continue with warnings
-                                raise error_msg
+                            if not self.streaming:
+                                # Fixed: raise proper exception instead of string
+                                raise ValueError(error_msg)
                         
                         current_sequence.append(line.upper())
                 
@@ -207,9 +213,10 @@ class FastaParser:
                     yield current_header, sequence
         
         except Exception as e:
-                error_msg = f"Unexpected parsing error: {e}"
-                self.stats['parsing_errors'].append(error_msg)
-                raise error_msg
+            error_msg = f"Unexpected parsing error: {e}"
+            self.stats['parsing_errors'].append(error_msg)
+            # Fixed: raise proper exception instead of string
+            raise ValueError(error_msg)
         
     def get_sequences_list(self) -> list:
         """
@@ -226,32 +233,3 @@ class FastaParser:
     def get_stats(self):
         """Get parsing statistics."""
         return self.stats.copy()
-
-if __name__ == "__main__":
-    tracemalloc.start()
-    # Test the class
-    parser = FastaParser("/Users/DerekChan1/Project/fastacheck/examples/realistic_genome_assembly.fasta")
-    print(f"Parser initialized with: {parser.file_path}")
-    validation = parser.validate_format()
-    print("Validation results:", validation)
-    
-    if validation['is_valid']:
-        # Parse sequences
-        sequences = parser.get_sequences_list()
-        
-        print(f"\nParsed {len(sequences)} sequences:")
-        for i, (header, seq) in enumerate(sequences[:3]):  # Show first 3
-            print(f"\nSequence {i+1}:")
-            print(f"  ID: {header['sequence_id']}")
-            print(f"  Description: {header['description']}")
-            print(f"  Length: {len(seq)}")
-            print(f"  First 50 chars: {seq[:50]}...")
-    
-    # Get statistics
-    stats = parser.get_stats()
-    print(f"\nParsing statistics: {stats}")
-    current, peak = tracemalloc.get_traced_memory()
-    print(f"Current memory usage: {current / 1024 / 1024:.2f} MB")
-    print(f"Peak memory usage: {peak / 1024 / 1024:.2f} MB")
-
-    tracemalloc.stop()
