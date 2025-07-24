@@ -1,4 +1,9 @@
-colorama>=0.4.4
-numpy>=1.21.0
-scipy>=1.7.0
-tqdm>=4.62.0
+# Core dependencies
+numpy>=1.20.0
+
+# Development dependencies
+pytest>=6.0
+pytest-cov
+black
+flake8
+mypy
